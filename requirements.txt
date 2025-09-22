@@ -1,0 +1,26 @@
+# FastAPI server (optional, for API mode)
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Streamlit for web interface
+streamlit
+
+# LangChain for LLM orchestration
+langchain
+langchain-openai
+langchain-community
+
+# Vector Store and Document Processing
+faiss-cpu
+pymupdf
+
+# Search Tool
+tavily-python
+
+# Environment variable management
+python-dotenv
+pydantic-settings
+
+# For creating unique session IDs
+uuid
