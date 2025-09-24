@@ -114,23 +114,57 @@ class DocumentProcessor:
 
     def extract_metadata_from_text(self, text: str, page_num: int) -> Dict[str, Any]:
         """
-        Extract structured metadata from text content.
+        Extract structured metadata from text content with exact value preservation.
         """
         metadata = {"page": page_num}
 
         try:
-            # Extract financial metrics
+            # Extract financial metrics with their context
             currencies = self.financial_patterns['currency'].findall(text)
             if currencies:
-                metadata['financial_values'] = currencies[:5]  # Top 5 values
+                # Store with surrounding context for verification
+                currency_contexts = []
+                for currency in currencies[:10]:  # Increased to capture more values
+                    idx = text.find(currency)
+                    if idx != -1:
+                        # Get 50 chars before and after for context
+                        start = max(0, idx - 50)
+                        end = min(len(text), idx + len(currency) + 50)
+                        context = text[start:end].strip()
+                        currency_contexts.append({
+                            "value": currency,
+                            "context": context
+                        })
+                metadata['financial_values'] = currencies[:10]
+                metadata['financial_contexts'] = currency_contexts
 
             percentages = self.financial_patterns['percentage'].findall(text)
             if percentages:
-                metadata['percentages'] = percentages[:5]
+                metadata['percentages'] = percentages[:10]  # Increased capture
 
+            # Enhanced date extraction with fiscal year and quarter detection
             dates = self.financial_patterns['date'].findall(text)
-            if dates:
-                metadata['time_periods'] = list(set(dates))[:3]
+            fiscal_years = re.findall(r'FY\s*20\d{2}', text, re.IGNORECASE)
+            quarters = re.findall(r'Q[1-4]\s*20\d{2}', text, re.IGNORECASE)
+
+            all_time_periods = list(set(dates + fiscal_years + quarters))
+            if all_time_periods:
+                metadata['time_periods'] = all_time_periods[:10]
+                metadata['primary_period'] = all_time_periods[0] if all_time_periods else None
+
+            # Extract exact numeric values with their labels
+            value_patterns = re.findall(
+                r'([A-Za-z\s]+):\s*\$?([\d,]+(?:\.\d{1,2})?(?:\s*(?:million|billion|M|B))?)',
+                text, re.IGNORECASE
+            )
+            if value_patterns:
+                labeled_values = []
+                for label, value in value_patterns[:20]:
+                    labeled_values.append({
+                        "label": label.strip(),
+                        "value": value.strip()
+                    })
+                metadata['labeled_values'] = labeled_values
 
             # Identify section type
             text_lower = text[:500].lower() if len(text) > 500 else text.lower()
@@ -142,6 +176,11 @@ class DocumentProcessor:
                 metadata['section'] = 'Cash Flow'
             elif 'executive summary' in text_lower or 'overview' in text_lower:
                 metadata['section'] = 'Executive Summary'
+            elif 'revenue' in text_lower or 'sales' in text_lower:
+                metadata['section'] = 'Revenue Details'
+
+            # Add text snippet for exact matching
+            metadata['text_snippet'] = text[:500] if len(text) > 500 else text
 
         except Exception as e:
             logger.debug(f"Error extracting metadata: {e}")
@@ -214,14 +253,39 @@ class DocumentProcessor:
                             metadata=page_metadata
                         )
 
-                        # Split into chunks if needed
+                        # Split into chunks if needed with enhanced metadata
                         if len(processed_text) > self.chunk_size:
                             chunks = self.text_splitter.split_documents([page_doc])
-                            # Preserve page metadata in chunks
-                            for chunk in chunks:
+
+                            # Enhanced chunk processing with exact position tracking
+                            for i, chunk in enumerate(chunks):
+                                # Preserve and enhance metadata
                                 chunk.metadata.update(page_metadata)
+                                chunk.metadata['chunk_index'] = i
+                                chunk.metadata['chunk_total'] = len(chunks)
+
+                                # Extract specific values from this chunk
+                                chunk_text = chunk.page_content
+                                chunk_values = self.financial_patterns['currency'].findall(chunk_text)
+                                chunk_dates = self.financial_patterns['date'].findall(chunk_text)
+                                chunk_percentages = self.financial_patterns['percentage'].findall(chunk_text)
+
+                                if chunk_values:
+                                    chunk.metadata['chunk_financial_values'] = chunk_values
+                                if chunk_dates:
+                                    chunk.metadata['chunk_dates'] = chunk_dates
+                                if chunk_percentages:
+                                    chunk.metadata['chunk_percentages'] = chunk_percentages
+
+                                # Add position marker for source tracking
+                                chunk.metadata['source_location'] = f"Page {page_num}, Chunk {i+1}/{len(chunks)}"
+
                             all_docs.extend(chunks)
                         else:
+                            # Single chunk still gets enhanced metadata
+                            page_doc.metadata['chunk_index'] = 0
+                            page_doc.metadata['chunk_total'] = 1
+                            page_doc.metadata['source_location'] = f"Page {page_num}"
                             all_docs.append(page_doc)
 
                         logger.debug(f"Processed page {page_num} of '{filename}' successfully")
