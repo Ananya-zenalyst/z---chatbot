@@ -368,7 +368,7 @@ if not st.session_state.vector_store_ready:
     # Welcome message when no documents are uploaded
     st.markdown("""
     <div class="upload-section">
-        <h2>👋 Welcome to Financial Chatbot!</h2>
+        <h2>👋 Welcome to your personal analyzer!</h2>
         <p>To get started:</p>
         <ol>
             <li>Upload your financial PDF documents using the sidebar</li>
