@@ -88,6 +88,7 @@ st.markdown("""
         border: 2px solid #e9ecef;
         border-radius: 10px;
         font-size: 16px;
+        caret-color: black !important;
     }
 
     /* Button styling */
