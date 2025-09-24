@@ -26,7 +26,7 @@ class ChatAgent:
     def __init__(self):
         # 1. Initialize the LLM
         self.llm = ChatOpenAI(
-            model="gpt-4o",
+            model="gpt-5o",
             temperature=0,
             api_key=settings.OPENAI_API_KEY
         )
