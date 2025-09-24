@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Set page config
 st.set_page_config(
-    page_title="Financial Chatbot",
+    page_title="Z Analyzer",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -200,8 +200,8 @@ def initialize_vector_store():
 # Header with enhanced styling
 st.markdown("""
 <div style='text-align: center; padding: 2rem 0;'>
-    <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>💰 Financial Document Chatbot</h1>
-    <h3 style='color: #ffffff; opacity: 0.9; font-weight: 300;'>Upload your financial PDFs and ask intelligent questions about them!</h3>
+    <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>💰 Z Analyzer</h1>
+    <h3 style='color: #ffffff; opacity: 0.9; font-weight: 300;'>Upload your financial Data and ask intelligent questions about them!</h3>
 </div>
 """, unsafe_allow_html=True)
 
@@ -226,7 +226,7 @@ with st.sidebar:
                     color: white; padding: 1rem; border-radius: 10px;
                     text-align: center; margin-bottom: 1rem;'>
             <h4 style='margin: 0; color: white;'>📤 Getting Started</h4>
-            <p style='margin: 0; opacity: 0.9;'>Upload PDF documents to begin</p>
+            <p style='margin: 0; opacity: 0.9;'>Upload documents to begin</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -235,7 +235,7 @@ with st.sidebar:
         "Upload PDF files",
         type=['pdf'],
         accept_multiple_files=True,
-        help="Upload one or more PDF files to analyze"
+        help="Upload one or more Report to analyze"
     )
 
     if uploaded_files and st.button("Process Documents", type="primary"):
@@ -485,7 +485,7 @@ if st.session_state.vector_store_ready:
         st.metric("Status", "🟢 Ready")
 
 # Instructions at bottom
-with st.expander("ℹ️ How to use this chatbot"):
+with st.expander("ℹ️ How to use this analyzer"):
     st.markdown("""
     ### Quick Start Guide
 
