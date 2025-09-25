@@ -233,7 +233,7 @@ with st.sidebar:
 
     # File uploader
     uploaded_files = st.file_uploader(
-        "Upload Here"
+        "Upload Here",
         type=['pdf'],
         accept_multiple_files=True,
         help="Upload one or more Report to analyze"
