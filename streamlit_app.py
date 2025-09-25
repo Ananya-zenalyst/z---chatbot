@@ -234,7 +234,6 @@ with st.sidebar:
     # File uploader
     uploaded_files = st.file_uploader(
         "Upload Here",
-        type=['pdf'],
         accept_multiple_files=True,
         help="Upload one or more Report to analyze"
     )
@@ -267,11 +266,11 @@ with st.sidebar:
                     filenames.append(uploaded_file.name)
 
                 if not contents:
-                    st.error("No valid PDF files to process")
+                    st.error("No valid files to process")
                     progress_text.empty()
                     progress_bar.empty()
                 else:
-                    progress_text.text("Processing PDF content...")
+                    progress_text.text("Processing content...")
                     progress_bar.progress(0.5)
 
                     # Process documents
