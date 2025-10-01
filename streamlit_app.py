@@ -217,7 +217,7 @@ with st.sidebar:
                     color: white; padding: 1rem; border-radius: 10px;
                     text-align: center; margin-bottom: 1rem;'>
             <h4 style='margin: 0; color: white;'>✅ Vector Store Ready</h4>
-            <p style='margin: 0; opacity: 0.9;'>Data loaded and ready for queries</p>
+            <p style='margin: 0; opacity: 0.9;'>Documents loaded and ready for queries</p>
         </div>
         """, unsafe_allow_html=True)
         st.session_state.vector_store_ready = True
@@ -227,13 +227,14 @@ with st.sidebar:
                     color: white; padding: 1rem; border-radius: 10px;
                     text-align: center; margin-bottom: 1rem;'>
             <h4 style='margin: 0; color: white;'>📤 Getting Started</h4>
-            <p style='margin: 0; opacity: 0.9;'>Upload data to begin</p>
+            <p style='margin: 0; opacity: 0.9;'>Upload documents to begin</p>
         </div>
         """, unsafe_allow_html=True)
 
     # File uploader
     uploaded_files = st.file_uploader(
-        "Upload Here",
+        "Upload PDF files",
+        type=['pdf'],
         accept_multiple_files=True,
         help="Upload one or more Report to analyze"
     )
@@ -266,11 +267,11 @@ with st.sidebar:
                     filenames.append(uploaded_file.name)
 
                 if not contents:
-                    st.error("No valid files to process")
+                    st.error("No valid PDF files to process")
                     progress_text.empty()
                     progress_bar.empty()
                 else:
-                    progress_text.text("Processing content...")
+                    progress_text.text("Processing PDF content...")
                     progress_bar.progress(0.5)
 
                     # Process documents
@@ -367,12 +368,12 @@ if not st.session_state.vector_store_ready:
     # Welcome message when no documents are uploaded
     st.markdown("""
     <div class="upload-section">
-        <h2> Welcome to your personal analyzer!</h2>
+        <h2>👋 Welcome to your personal analyzer!</h2>
         <p>To get started:</p>
         <ol>
-            <li>Upload your financial data using the sidebar</li>
-            <li>Click "Process Data" to analyze them</li>
-            <li>Ask questions</li>
+            <li>Upload your financial PDF documents using the sidebar</li>
+            <li>Click "Process Documents" to analyze them</li>
+            <li>Start asking questions about your documents</li>
         </ol>
         <p><strong>Features:</strong></p>
         <ul>

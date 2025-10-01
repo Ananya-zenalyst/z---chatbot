@@ -146,7 +146,7 @@ Remember: Your job is not just to report numbers, but to help users understand w
             raise RuntimeError("Vector store is not initialized. Cannot create retriever tool.")
 
         def retriever_func(query: str) -> str:
-            """Enhanced wrapper function for the retriever with exact value preservation."""
+            """Enhanced wrapper function for the retriever."""
             try:
                 # Get documents with improved search
                 docs = retriever.invoke(query)
@@ -164,70 +164,43 @@ Remember: Your job is not just to report numbers, but to help users understand w
                     seen = set()
                     unique_docs = []
                     for doc in docs:
-                        doc_id = f"{doc.metadata.get('source', '')}/{doc.metadata.get('page', '')}{doc.page_content[:100]}"
+                        doc_id = f"{doc.metadata.get('source', '')}{doc.metadata.get('page', '')}{doc.page_content[:100]}"
                         if doc_id not in seen:
                             seen.add(doc_id)
                             unique_docs.append(doc)
-                    docs = unique_docs[:15]  # Increased limit for better coverage
+                    docs = unique_docs[:10]  # Limit to 10 most relevant
 
                 if not docs:
                     return "No relevant information found in the uploaded documents. Please ensure the documents contain the information you're looking for."
 
-                # Format the results with enhanced metadata
-                result_parts = ["📊 DOCUMENT SEARCH RESULTS WITH EXACT VALUES:\n"]
+                # Format the results with better organization
+                result_parts = []
                 sources = {}
 
                 for doc in docs:
                     source_name = doc.metadata.get('source', 'Unknown source')
                     page_num = doc.metadata.get('page', '')
-                    source_location = doc.metadata.get('source_location', '')
 
-                    # Extract exact values from metadata
-                    financial_values = doc.metadata.get('chunk_financial_values', [])
-                    dates = doc.metadata.get('chunk_dates', [])
-                    percentages = doc.metadata.get('chunk_percentages', [])
-
-                    # Create enhanced source key
+                    # Create source key
                     source_key = f"{source_name}"
-                    if source_location:
-                        source_key += f" ({source_location})"
-                    elif page_num:
+                    if page_num:
                         source_key += f" (Page {page_num})"
 
                     if source_key not in sources:
-                        sources[source_key] = {
-                            'content': [],
-                            'values': set(),
-                            'dates': set(),
-                            'percentages': set()
-                        }
+                        sources[source_key] = []
 
-                    sources[source_key]['content'].append(doc.page_content)
-                    sources[source_key]['values'].update(financial_values)
-                    sources[source_key]['dates'].update(dates)
-                    sources[source_key]['percentages'].update(percentages)
+                    sources[source_key].append(doc.page_content)
 
-                # Build organized result with exact values highlighted
-                for source_key, data in sources.items():
-                    result_parts.append(f"\n📍 SOURCE: {source_key}")
-
-                    # Show exact values found
-                    if data['values']:
-                        result_parts.append(f"💰 EXACT VALUES: {', '.join(data['values'])}")
-                    if data['dates']:
-                        result_parts.append(f"📅 DATES/PERIODS: {', '.join(data['dates'])}")
-                    if data['percentages']:
-                        result_parts.append(f"📊 PERCENTAGES: {', '.join(data['percentages'])}")
-
-                    result_parts.append("\n--- CONTENT ---")
-                    combined_content = "\n".join(data['content'])
-                    # Preserve more content for accuracy
-                    if len(combined_content) > 3000:
-                        combined_content = combined_content[:3000] + "...[truncated for length]"
+                # Build organized result
+                for source_key, contents in sources.items():
+                    result_parts.append(f"\n--- {source_key} ---")
+                    combined_content = "\n".join(contents)
+                    # Limit content length to avoid token issues
+                    if len(combined_content) > 2000:
+                        combined_content = combined_content[:2000] + "..."
                     result_parts.append(combined_content)
 
-                result_parts.append(f"\n\n✅ SEARCH COMPLETE: Found {len(docs)} relevant sections across {len(sources)} source locations")
-                result_parts.append("⚠️ All values above are EXACT as found in documents - use them without modification")
+                result_parts.append(f"\n\n[Found {len(docs)} relevant sections across {len(sources)} source locations]")
 
                 return "\n".join(result_parts)
 
