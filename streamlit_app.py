@@ -1,5 +1,7 @@
 import streamlit as st
 import asyncio
+import requests
+import json
 from app.services.document_processor import DocumentProcessor
 from app.services.vector_store import VectorStoreService
 from app.services.chat_agent import get_chat_agent
@@ -173,18 +175,96 @@ st.markdown("""
         padding: 2rem;
         backdrop-filter: blur(10px);
     }
+
+    /* Session info styling */
+    .session-info {
+        background: linear-gradient(135deg, #17a2b8 0%, #6f42c1 100%);
+        color: white;
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# API Configuration
+API_BASE_URL = "http://localhost:8000"
 
 # Initialize session state
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+    st.session_state.session_id = None
 if 'vector_store_ready' not in st.session_state:
     st.session_state.vector_store_ready = False
 if 'uploaded_files' not in st.session_state:
     st.session_state.uploaded_files = []
+if 'documents_uploaded' not in st.session_state:
+    st.session_state.documents_uploaded = False
+
+# API Helper Functions
+def upload_files_to_api(files):
+    """Upload files to the FastAPI backend and get session ID"""
+    files_data = []
+    for file in files:
+        files_data.append(('files', (file.name, file.getvalue(), 'application/pdf')))
+
+    try:
+        response = requests.post(f"{API_BASE_URL}/upload/", files=files_data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Upload failed: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {e}")
+        return None
+
+def send_chat_message(session_id, query):
+    """Send chat message to the API"""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/chat/",
+            json={"session_id": session_id, "query": query}
+        )
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 404:
+            st.error("Session not found. Please upload documents again.")
+            return None
+        else:
+            st.error(f"Chat failed: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {e}")
+        return None
+
+def delete_session(session_id):
+    """Delete session manually"""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/delete/",
+            json={"session_id": session_id}
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"Delete failed: {response.text}")
+            return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"Connection error: {e}")
+        return None
+
+def get_session_info(session_id):
+    """Get session information"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/sessions/{session_id}/info")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except requests.exceptions.RequestException as e:
+        return None
 
 # Check if vector store exists on startup
 @st.cache_resource
@@ -198,29 +278,149 @@ def initialize_vector_store():
         logger.error(f"Error loading vector store: {e}")
     return False
 
+# Session Management JavaScript
+session_js = """
+<script>
+class StreamlitSessionManager {
+    constructor() {
+        this.sessionId = null;
+        this.isActive = true;
+        this.inactivityTimer = null;
+        this.INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+        this.API_BASE_URL = 'http://localhost:8000';
+        this.init();
+    }
+
+    init() {
+        this.setupActivityListeners();
+        this.setupVisibilityListener();
+        this.setupBeforeUnloadListener();
+        console.log('Session Manager initialized');
+    }
+
+    setSessionId(sessionId) {
+        this.sessionId = sessionId;
+        sessionStorage.setItem('streamlit_session_id', sessionId);
+        console.log('Session ID set:', sessionId);
+    }
+
+    getSessionId() {
+        if (!this.sessionId) {
+            this.sessionId = sessionStorage.getItem('streamlit_session_id');
+        }
+        return this.sessionId;
+    }
+
+    setupActivityListeners() {
+        window.addEventListener('focus', () => this.onActivityResume());
+        window.addEventListener('blur', () => this.onActivityPause());
+        const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+        activityEvents.forEach(event => {
+            document.addEventListener(event, () => this.resetInactivityTimer(), true);
+        });
+    }
+
+    setupVisibilityListener() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.onActivityPause();
+            } else {
+                this.onActivityResume();
+            }
+        });
+    }
+
+    setupBeforeUnloadListener() {
+        window.addEventListener('beforeunload', () => {
+            this.cleanupSession();
+        });
+    }
+
+    onActivityResume() {
+        this.isActive = true;
+        this.clearInactivityTimer();
+        console.log('Activity resumed');
+    }
+
+    onActivityPause() {
+        this.isActive = false;
+        this.startInactivityTimer();
+        console.log('Activity paused');
+    }
+
+    startInactivityTimer() {
+        this.clearInactivityTimer();
+        this.inactivityTimer = setTimeout(() => {
+            console.log('Session inactive for 5 minutes, cleaning up');
+            this.cleanupSession();
+        }, this.INACTIVITY_TIMEOUT);
+    }
+
+    clearInactivityTimer() {
+        if (this.inactivityTimer) {
+            clearTimeout(this.inactivityTimer);
+            this.inactivityTimer = null;
+        }
+    }
+
+    resetInactivityTimer() {
+        if (!this.isActive) return;
+        this.clearInactivityTimer();
+        this.startInactivityTimer();
+    }
+
+    async cleanupSession() {
+        if (!this.sessionId) return;
+        try {
+            await fetch(`${this.API_BASE_URL}/delete/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: this.sessionId })
+            });
+            console.log('Session cleaned up:', this.sessionId);
+            sessionStorage.removeItem('streamlit_session_id');
+            this.sessionId = null;
+        } catch (error) {
+            console.error('Error cleaning up session:', error);
+        }
+    }
+}
+
+if (!window.streamlitSessionManager) {
+    window.streamlitSessionManager = new StreamlitSessionManager();
+}
+</script>
+"""
+
+# Inject the JavaScript
+st.markdown(session_js, unsafe_allow_html=True)
+
 # Header with enhanced styling
 st.markdown("""
 <div style='text-align: center; padding: 2rem 0;'>
     <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>💰 Z Analyzer</h1>
-    <h3 style='color: #ffffff; opacity: 0.9; font-weight: 300;'>Upload your financial Data and ask intelligent questions about them!</h3>
+    <h3 style='color: #ffffff; opacity: 0.9; font-weight: 300;'>Session-Based Financial Document Analysis</h3>
 </div>
 """, unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
-    st.header("📁 Document Management")
+    st.header("📁 Session Management")
 
-    # Check vector store status with better styling
-    if initialize_vector_store():
-        st.markdown("""
-        <div style='background: linear-gradient(135deg, #28a745, #20c997);
-                    color: white; padding: 1rem; border-radius: 10px;
-                    text-align: center; margin-bottom: 1rem;'>
-            <h4 style='margin: 0; color: white;'>✅ Vector Store Ready</h4>
-            <p style='margin: 0; opacity: 0.9;'>Documents loaded and ready for queries</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.vector_store_ready = True
+    # Display current session info
+    if st.session_state.session_id:
+        session_info = get_session_info(st.session_state.session_id)
+        if session_info:
+            st.markdown(f"""
+            <div class="session-info">
+                <h4>Current Session</h4>
+                <p><strong>ID:</strong> {st.session_state.session_id[:8]}...</p>
+                <p><strong>Documents:</strong> {session_info.get('document_count', 0)}</p>
+                <p><strong>Created:</strong> {session_info.get('created_at', 'Unknown')[:19]}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("Session may have expired")
     else:
         st.markdown("""
         <div style='background: linear-gradient(135deg, #17a2b8, #6f42c1);
@@ -241,100 +441,26 @@ with st.sidebar:
 
     if uploaded_files and st.button("Process Documents", type="primary"):
         with st.spinner("Processing documents..."):
-            try:
-                # Process uploaded files
-                contents = []
-                filenames = []
+            result = upload_files_to_api(uploaded_files)
+            if result:
+                st.session_state.session_id = result['session_id']
+                st.session_state.documents_uploaded = True
+                st.session_state.vector_store_ready = True
+                st.session_state.chat_history = []
+                st.session_state.uploaded_files = result['filenames']
 
-                # Show progress for multiple files
-                progress_text = st.empty()
-                progress_bar = st.progress(0)
+                # Update JavaScript with new session ID
+                st.markdown(f"""
+                <script>
+                if (window.streamlitSessionManager) {{
+                    window.streamlitSessionManager.setSessionId('{result["session_id"]}');
+                }}
+                </script>
+                """, unsafe_allow_html=True)
 
-                for i, uploaded_file in enumerate(uploaded_files):
-                    progress_text.text(f"Reading file {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
-                    progress_bar.progress((i + 1) / (len(uploaded_files) + 1))
-
-                    # Reset file pointer to beginning
-                    uploaded_file.seek(0)
-                    file_bytes = uploaded_file.read()
-
-                    # Validate PDF
-                    if len(file_bytes) < 100:
-                        st.warning(f"⚠️ File '{uploaded_file.name}' appears to be empty or too small")
-                        continue
-
-                    contents.append(file_bytes)
-                    filenames.append(uploaded_file.name)
-
-                if not contents:
-                    st.error("No valid PDF files to process")
-                    progress_text.empty()
-                    progress_bar.empty()
-                else:
-                    progress_text.text("Processing PDF content...")
-                    progress_bar.progress(0.5)
-
-                    # Process documents
-                    processor = DocumentProcessor()
-                    documents = asyncio.run(processor.process_documents(contents, filenames))
-
-                    if documents and len(documents) > 0:
-                        progress_text.text("Creating vector store...")
-                        progress_bar.progress(0.75)
-
-                        # Load or create vector store
-                        VectorStoreService.load_or_create_vector_store(documents)
-                        st.session_state.vector_store_ready = True
-
-                        # Only add successfully processed files
-                        for filename in filenames:
-                            if filename not in st.session_state.uploaded_files:
-                                st.session_state.uploaded_files.append(filename)
-
-                        progress_text.text("Complete!")
-                        progress_bar.progress(1.0)
-
-                        st.success(f"✅ Successfully processed {len(documents)} document chunks from {len(filenames)} file(s)")
-
-                        # Show summary of what was extracted
-                        with st.expander("📋 Processing Summary", expanded=False):
-                            for filename in filenames:
-                                file_chunks = [d for d in documents if d.metadata.get('source') == filename]
-                                if file_chunks:
-                                    st.write(f"**{filename}**: {len(file_chunks)} chunks")
-                                    # Show sample metadata from first chunk
-                                    if file_chunks[0].metadata.get('time_periods'):
-                                        st.write(f"  - Time periods: {', '.join(file_chunks[0].metadata['time_periods'])}")
-                                    if file_chunks[0].metadata.get('financial_values'):
-                                        st.write(f"  - Sample values: {', '.join(file_chunks[0].metadata['financial_values'][:3])}")
-
-                        st.rerun()
-                    else:
-                        progress_text.empty()
-                        progress_bar.empty()
-                        st.error("❌ Could not extract any content from the provided PDFs")
-                        st.info("💡 Please ensure your PDFs:")
-                        st.write("• Contain readable text (not scanned images)")
-                        st.write("• Are not password protected")
-                        st.write("• Are valid PDF files")
-                        st.write("• Contain financial or business information")
-
-            except Exception as e:
-                st.error(f"❌ Error processing documents: {str(e)}")
-                logger.error(f"Document processing error: {e}", exc_info=True)
-
-                # Provide helpful troubleshooting tips
-                st.info("💡 Troubleshooting tips:")
-                st.write("• Try uploading one file at a time to identify problematic PDFs")
-                st.write("• Ensure PDFs are not corrupted or password-protected")
-                st.write("• Check that files contain actual text, not just images")
-
-                # Clean up progress indicators if they exist
-                try:
-                    progress_text.empty()
-                    progress_bar.empty()
-                except:
-                    pass
+                st.success(f"✅ Successfully processed {len(uploaded_files)} files!")
+                st.success(f"📋 Session ID: {result['session_id'][:8]}...")
+                st.rerun()
 
     # Display uploaded files with better styling
     if st.session_state.uploaded_files:
@@ -350,37 +476,51 @@ with st.sidebar:
             """, unsafe_allow_html=True)
 
     # Session management
-    st.divider()
-    st.subheader("🔧 Session Management")
-    st.text(f"Session ID: {st.session_state.session_id[:8]}...")
+    if st.session_state.session_id:
+        st.divider()
+        st.subheader("🔧 Session Actions")
 
-    if st.button("Clear Chat History"):
-        st.session_state.chat_history = []
-        st.rerun()
+        if st.button("🗑️ Delete Session"):
+            result = delete_session(st.session_state.session_id)
+            if result:
+                st.session_state.session_id = None
+                st.session_state.documents_uploaded = False
+                st.session_state.vector_store_ready = False
+                st.session_state.chat_history = []
+                st.session_state.uploaded_files = []
+                st.success("Session deleted successfully!")
+                st.rerun()
 
-    if st.button("New Session"):
-        st.session_state.session_id = str(uuid.uuid4())
-        st.session_state.chat_history = []
-        st.rerun()
+        if st.button("Clear Chat History"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+        if st.button("ℹ️ Session Info"):
+            info = get_session_info(st.session_state.session_id)
+            if info:
+                st.json(info)
 
 # Main chat interface
-if not st.session_state.vector_store_ready:
+if not st.session_state.documents_uploaded:
     # Welcome message when no documents are uploaded
     st.markdown("""
     <div class="upload-section">
-        <h2>👋 Welcome to your personal analyzer!</h2>
+        <h2>🚀 Welcome to your personal analyzer!</h2>
         <p>To get started:</p>
         <ol>
             <li>Upload your financial PDF documents using the sidebar</li>
-            <li>Click "Process Documents" to analyze them</li>
+            <li>Click "Process Documents" to create a new session</li>
             <li>Start asking questions about your documents</li>
         </ol>
-        <p><strong>Features:</strong></p>
+        <p><strong>Session Features:</strong></p>
         <ul>
-            <li>📊 Extract financial metrics and data</li>
-            <li>🔍 Search through multiple documents</li>
-            <li>🌐 Get real-time market data via web search</li>
-            <li>💬 Maintain conversation context</li>
+            <li>✅ Automatic session management</li>
+            <li>✅ Isolated document processing per session</li>
+            <li>✅ Automatic cleanup on tab inactivity (5 minutes)</li>
+            <li>✅ Manual session deletion</li>
+            <li>✅ Real-time chat with your documents</li>
+            <li>🌐 Web search for external data</li>
+            <li>💬 Conversation memory within session</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -445,19 +585,16 @@ else:
             # Get response
             with st.spinner("Thinking..."):
                 try:
-                    # Get or create chat agent
-                    chat_agent = get_chat_agent()
+                    # Send message to API
+                    response = send_chat_message(st.session_state.session_id, query_to_process)
+                    if response:
+                        # Extract response text
+                        response_text = response.get("response", "I couldn't generate a response. Please try again.")
 
-                    # Get response
-                    response = asyncio.run(
-                        chat_agent.get_response(query_to_process, st.session_state.session_id)
-                    )
-
-                    # Extract response text
-                    response_text = response.get("output", "I couldn't generate a response. Please try again.")
-
-                    # Add assistant message to history
-                    st.session_state.chat_history.append({"role": "assistant", "content": response_text})
+                        # Add assistant message to history
+                        st.session_state.chat_history.append({"role": "assistant", "content": response_text})
+                    else:
+                        st.error("Failed to get response from the API.")
 
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
@@ -472,7 +609,7 @@ else:
                     st.rerun()
 
 # Footer with metrics
-if st.session_state.vector_store_ready:
+if st.session_state.documents_uploaded:
     st.divider()
     col1, col2, col3, col4 = st.columns(4)
 
@@ -481,9 +618,18 @@ if st.session_state.vector_store_ready:
     with col2:
         st.metric("Messages", len(st.session_state.chat_history))
     with col3:
-        st.metric("Session", st.session_state.session_id[:8])
+        st.metric("Session", st.session_state.session_id[:8] if st.session_state.session_id else "None")
     with col4:
         st.metric("Status", "🟢 Ready")
+
+# Footer with session management info
+st.markdown("""
+---
+<div style="text-align: center; opacity: 0.7; font-size: 0.8rem;">
+    <p>💡 <strong>Session Management:</strong> Your session will automatically cleanup after 5 minutes of tab inactivity.</p>
+    <p>🔄 Use the "Delete Session" button or upload new documents to start fresh.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # Instructions at bottom
 with st.expander("ℹ️ How to use this analyzer"):
@@ -507,16 +653,19 @@ with st.expander("ℹ️ How to use this analyzer"):
     - "Calculate the year-over-year growth"
     - "What factors affected profitability?"
 
-    **4. Features**
-    - 📄 Multi-document support
+    **4. Session Features**
+    - 📄 Multi-document support per session
     - 🔍 Intelligent document search
     - 🌐 Web search for external data
-    - 💬 Conversation memory
+    - 💬 Conversation memory within session
     - 📊 Financial calculations
+    - ⏰ Automatic cleanup after 5 minutes inactivity
+    - 🗑️ Manual session deletion
 
     **5. Tips**
     - Be specific with your questions
-    - The bot remembers previous messages in the session
-    - Click "New Session" to start fresh
-    - Upload new documents anytime
+    - Each session isolates your documents and conversations
+    - Sessions auto-delete after 5 minutes of tab inactivity
+    - Use "Delete Session" to manually clean up
+    - Upload new documents to create a fresh session
     """)

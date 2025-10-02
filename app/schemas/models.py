@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 
 class ChatRequest(BaseModel):
@@ -24,7 +24,8 @@ class UploadResponse(BaseModel):
     Defines the structure for the response after files are uploaded.
     """
     message: str
-    processed_files: List[DocumentInfo]
+    session_id: str
+    filenames: List[str]
 
 class ChatResponse(BaseModel):
     """
@@ -32,3 +33,16 @@ class ChatResponse(BaseModel):
     """
     session_id: str = Field(..., description="The unique identifier for the chat session.")
     response: str = Field(..., description="The chatbot's response to the user's query.")
+
+class DeleteSessionRequest(BaseModel):
+    """
+    Defines the structure for deleting a session.
+    """
+    session_id: str = Field(..., description="The session ID to delete.")
+
+class DeleteSessionResponse(BaseModel):
+    """
+    Defines the structure for the delete session response.
+    """
+    message: str
+    session_id: str

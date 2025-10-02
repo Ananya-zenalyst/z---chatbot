@@ -16,7 +16,7 @@ class DocumentProcessor:
     and intelligent chunking for financial documents.
     """
 
-    def __init__(self, chunk_size: int = 800, chunk_overlap: int = 780):
+    def __init__(self, chunk_size: int = 1600, chunk_overlap: int = 800):
         """
         Initializes the DocumentProcessor with optimized settings for financial documents.
 
